@@ -8,7 +8,7 @@ import {
 } from "@kamino-finance/klend-sdk";
 import { address, Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import { AccountMeta, PublicKey } from "@solana/web3.js";
-import BN from "bn.js";
+import { BN } from "@coral-xyz/anchor";
 
 export const getVaultReserves = async (
   rpc: Rpc<SolanaRpcApi>,
