@@ -92,6 +92,11 @@ const withdrawKVaultStrategy = async (
     sharesTokenProgram
   );
 
+  const [globalConfig] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global_config"), kvault.toBuffer()],
+    kvaultsProgram
+  );
+
   const [tokenVault] = PublicKey.findProgramAddressSync(
     [Buffer.from("token_vault"), kvault.toBuffer()],
     kvaultsProgram
@@ -159,6 +164,7 @@ const withdrawKVaultStrategy = async (
   // Prepare the remaining accounts
   const remainingAccounts = [
     { pubkey: kvault, isSigner: false, isWritable: true },
+    { pubkey: globalConfig, isSigner: false, isWritable: false },
     { pubkey: tokenVault, isSigner: false, isWritable: true },
     { pubkey: baseVaultAuthority, isSigner: false, isWritable: false },
     { pubkey: sharesMint, isSigner: false, isWritable: true },
