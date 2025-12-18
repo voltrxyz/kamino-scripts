@@ -16,8 +16,11 @@ import {
   useLookupTable,
   vaultAddress,
 } from "../../config/base";
-import { kvaultAddress } from "../../config/kamino";
-import { ADAPTOR_PROGRAM_ID, DISCRIMINATOR } from "../constants/kamino";
+import {
+  directWithdrawDiscriminator,
+  kvaultAddress,
+} from "../../config/kamino";
+import { ADAPTOR_PROGRAM_ID } from "../constants/kamino";
 
 const initializeDirectWithdrawStrategy = async (
   connection: Connection,
@@ -28,10 +31,13 @@ const initializeDirectWithdrawStrategy = async (
   adaptorProgram: PublicKey,
   useLookupTable: boolean,
   lookupTableAddress: PublicKey,
-  instructionDiscriminator: Buffer | null = null,
+  instructionDiscriminator: Buffer,
   additionalArgs: Buffer | null = null,
   allowUserArgs: boolean = false
 ) => {
+  if (instructionDiscriminator.length !== 8) {
+    throw new Error("Instruction discriminator must be 8 bytes");
+  }
   const vc = new VoltrClient(connection);
 
   let transactionIxs: TransactionInstruction[] = [];
@@ -116,7 +122,7 @@ const main = async () => {
     new PublicKey(ADAPTOR_PROGRAM_ID),
     useLookupTable,
     new PublicKey(lookupTableAddress),
-    Buffer.from(DISCRIMINATOR.WITHDRAW_VAULT),
+    Buffer.from(directWithdrawDiscriminator),
     null,
     false
   );
