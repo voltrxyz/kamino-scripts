@@ -1,5 +1,5 @@
 import { BN } from "@coral-xyz/anchor";
-import { VaultConfig, VaultParams } from "@voltr/vault-sdk";
+import { VaultConfig, VaultParams, VaultConfigField } from "@voltr/vault-sdk";
 
 // ONLY NEEDED FOR INIT VAULT
 export const vaultConfig: VaultConfig = {
@@ -47,3 +47,7 @@ export const depositAmountVault = 1_000_000;
 export const withdrawAmountVault = 1_000_000;
 export const isWithdrawAll = false;
 export const isWithdrawInLp = false;
+
+// FOR VAULT CONFIG UPDATES
+export const vaultConfigUpdateField = VaultConfigField.MaxCap;
+export const vaultConfigUpdateValue = new BN(200_000_000_000);

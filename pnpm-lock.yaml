@@ -27,8 +27,8 @@ importers:
         specifier: ^1.98.0
         version: 1.98.2(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@voltr/vault-sdk':
-        specifier: ^1.0.9
-        version: 1.0.9(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(utf-8-validate@5.0.10)
+        specifier: ^1.0.16
+        version: 1.0.16(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(utf-8-validate@5.0.10)
       bs58:
         specifier: ^6.0.0
         version: 6.0.0
@@ -557,8 +557,8 @@ packages:
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
-  '@voltr/vault-sdk@1.0.9':
-    resolution: {integrity: sha512-RQRD+OG0UWNswNB2WZws1v8+hqWQH7v6F8AWRFy5REtslrtZdTfgJMSePsrtJp6ju+CTQfS4wj9dQKihFLpT9w==}
+  '@voltr/vault-sdk@1.0.16':
+    resolution: {integrity: sha512-Uq1UM6GUtaFvFiuuW6Cq2L2UCC26AKaqhSHQZytJcRwjbSYSoDK38nynikteqIZXBPgZQRHyHJgkzJ0VAgSJ9w==}
 
   acorn-walk@8.3.4:
     resolution: {integrity: sha512-ueEepnujpqee2o5aIYnvHU6C0A42MNdsIDeqy5BydrkuC5R1ZuUFnm27EeFJGoEHJQgn3uleRvmTXaJgfXbt4g==}
@@ -1887,7 +1887,7 @@ snapshots:
     dependencies:
       '@types/node': 22.15.2
 
-  '@voltr/vault-sdk@1.0.9(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(utf-8-validate@5.0.10)':
+  '@voltr/vault-sdk@1.0.16(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(utf-8-validate@5.0.10)':
     dependencies:
       '@coral-xyz/anchor': 0.31.1(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@solana/spl-token': 0.4.13(@solana/web3.js@1.98.2(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10))(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(utf-8-validate@5.0.10)
