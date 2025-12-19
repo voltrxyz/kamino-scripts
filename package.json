@@ -22,7 +22,7 @@
     "@solana/kit": "^2.1.1",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.98.0",
-    "@voltr/vault-sdk": "^1.0.16",
+    "@voltr/vault-sdk": "^1.0.17",
     "bs58": "^6.0.0",
     "decimal.js": "^10.4.3",
     "dotenv": "^16.5.0"
