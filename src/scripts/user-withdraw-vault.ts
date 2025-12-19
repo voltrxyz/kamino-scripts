@@ -35,7 +35,12 @@ const vc = new VoltrClient(connection);
 
 const withdrawVaultHandler = async () => {
   let ixs: TransactionInstruction[] = [];
-  const userAssetAta = getAssociatedTokenAddressSync(vaultAssetMint, user);
+  const userAssetAta = getAssociatedTokenAddressSync(
+    vaultAssetMint,
+    user,
+    true,
+    new PublicKey(assetTokenProgram)
+  );
   const createUserAssetAtaIx =
     createAssociatedTokenAccountIdempotentInstruction(
       user,

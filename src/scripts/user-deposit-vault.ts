@@ -39,7 +39,12 @@ const depositAmount = new BN(depositAmountVault);
 
 const depositVaultHandler = async () => {
   let ixs: TransactionInstruction[] = [];
-  const userAssetAta = getAssociatedTokenAddressSync(NATIVE_MINT, user);
+  const userAssetAta = getAssociatedTokenAddressSync(
+    vaultAssetMint,
+    user,
+    true,
+    new PublicKey(assetTokenProgram)
+  );
   if (vaultAssetMint.equals(NATIVE_MINT)) {
     // Find the WSOL Associated Token Account (ATA)
     // Create WSOL ATA instruction
