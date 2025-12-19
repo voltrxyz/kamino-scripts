@@ -46,7 +46,8 @@ const withdrawVaultHandler = async () => {
       user,
       userAssetAta,
       user,
-      vaultAssetMint
+      vaultAssetMint,
+      new PublicKey(assetTokenProgram)
     );
   ixs.push(createUserAssetAtaIx);
 
