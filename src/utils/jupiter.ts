@@ -22,20 +22,27 @@ export async function setupJupiterSwap(
   jupiterSwapData: Buffer;
   jupiterSwapAccountMetas: AccountMeta[];
 }> {
+  if (inputMintAddress.toBase58() === outputMintAddress.toBase58()) {
+    return {
+      jupiterSwapAddressLookupTableAccounts: [],
+      jupiterSwapData: Buffer.from([]),
+      jupiterSwapAccountMetas: [],
+    };
+  }
   try {
     // Get Jupiter quote
     const jupQuoteResponse = await (
       await fetch(
         `${JUP_ENDPOINT}/quote?inputMint=` +
-          `${inputMintAddress.toBase58()}` +
-          `&outputMint=` +
-          `${outputMintAddress.toBase58()}` +
-          `&amount=` +
-          `${swapAmount.toString()}` +
-          `&slippageBps=` +
-          `${slippageBps}` +
-          `&maxAccounts=` +
-          `${maxAccounts}`
+        `${inputMintAddress.toBase58()}` +
+        `&outputMint=` +
+        `${outputMintAddress.toBase58()}` +
+        `&amount=` +
+        `${swapAmount.toString()}` +
+        `&slippageBps=` +
+        `${slippageBps}` +
+        `&maxAccounts=` +
+        `${maxAccounts}`
       )
     ).json();
 
