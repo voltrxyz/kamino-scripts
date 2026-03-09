@@ -159,9 +159,8 @@ Run scripts using `pnpm ts-node <script_path>`. Ensure environment variables are
     *   Requires `vaultAddress`, `assetMintAddress`, `assetTokenProgram` in `base.ts`.
     *   Uses `USER_FILE_PATH`.
 
-*   **`src/scripts/user-request-and-withdraw-vault.ts`**
-    *   Combines the request and withdrawal steps into a single transaction.
-    *   **Only works if the vault's `withdrawalWaitingPeriod` in `vaultConfig` is set to 0.**
+*   **`src/scripts/user-instant-withdraw-vault.ts`**
+    *   Performs an instant withdrawal from the vault in a single transaction.
     *   Uses `withdrawAmountVault`, `isWithdrawInLp`, `isWithdrawAll` from `base.ts`.
     *   Requires `vaultAddress`, `assetMintAddress`, `assetTokenProgram` in `base.ts`.
     *   Uses `USER_FILE_PATH`.
@@ -209,9 +208,9 @@ Run scripts using `pnpm ts-node <script_path>`. Ensure environment variables are
         # Step 2: Wait for the period, then withdraw
         pnpm ts-node src/scripts/user-withdraw-vault.ts
         ```
-    *   **If `withdrawalWaitingPeriod` == 0:**
+    *   **Instant withdraw:**
         ```bash
-        pnpm ts-node src/scripts/user-request-and-withdraw-vault.ts
+        pnpm ts-node src/scripts/user-instant-withdraw-vault.ts
         ```
 9.  **Harvest Fees (Admin):**
     ```bash
