@@ -46,6 +46,7 @@ const serializeVaultConfigValue = (
     case VaultConfigField.AdminManagementFee:
     case VaultConfigField.RedemptionFee:
     case VaultConfigField.IssuanceFee:
+    case VaultConfigField.DisabledOperations:
       if (typeof value !== "number") {
         throw new Error(
           `Expected number for field ${field}, got ${typeof value}`
@@ -55,8 +56,9 @@ const serializeVaultConfigValue = (
       buffer.writeUInt16LE(value, 0);
       return buffer;
 
-    // PublicKey field (32 bytes)
+    // PublicKey fields (32 bytes)
     case VaultConfigField.Manager:
+    case VaultConfigField.PendingAdmin:
       if (!(value instanceof PublicKey)) {
         throw new Error(
           `Expected PublicKey for field ${field}, got ${typeof value}`
