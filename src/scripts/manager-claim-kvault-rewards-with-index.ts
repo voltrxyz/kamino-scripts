@@ -1,25 +1,7 @@
 import "dotenv/config";
 import * as fs from "fs";
-import { AccountMeta, Connection, Keypair, PublicKey } from "@solana/web3.js";
-import {
-  getAddressLookupTableAccounts,
-  sendAndConfirmOptimisedTx,
-} from "../utils/helper";
 import { BN } from "@coral-xyz/anchor";
-import { VoltrClient } from "@voltr/vault-sdk";
-import {
-  assetMintAddress,
-  vaultAddress,
-  assetTokenProgram,
-  lookupTableAddress,
-} from "../../config/base";
-import { kvaultAddress, kvaultRewardIndex } from "../../config/kamino";
-import {
-  ADAPTOR_PROGRAM_ID,
-  DISCRIMINATOR,
-  FARM_GLOBAL_CONFIG,
-  SCOPE,
-} from "../constants/kamino";
+import { Farms } from "@kamino-finance/farms-sdk";
 import {
   DEFAULT_KLEND_PROGRAM_ID,
   KaminoVault,
@@ -27,6 +9,7 @@ import {
 } from "@kamino-finance/klend-sdk";
 import {
   createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
@@ -37,12 +20,35 @@ import {
   DEFAULT_RPC_CONFIG,
   getAddressEncoder,
   getProgramDerivedAddress,
-  SolanaRpcApi,
+  type SolanaRpcApi,
 } from "@solana/kit";
-import { getVaultReserves } from "../utils/kamino";
-import { Farms } from "@kamino-finance/farms-sdk";
+import { AccountMeta, Connection, Keypair, PublicKey } from "@solana/web3.js";
+import {
+  findVaultStrategyAuthPda,
+  getWithdrawStrategyInstructionAsync,
+} from "@voltr/vault-sdk";
 import Decimal from "decimal.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import {
+  createKitSignerFromKeypair,
+  getAddressLookupTableAccounts,
+  kitInstructionToWeb3,
+  publicKeyToAddress,
+  sendAndConfirmOptimisedTx,
+} from "../utils/helper";
+import { getVaultReserves } from "../utils/kamino";
+import {
+  assetMintAddress,
+  assetTokenProgram,
+  lookupTableAddress,
+  vaultAddress,
+} from "../../config/base";
+import { kvaultAddress, kvaultRewardIndex } from "../../config/kamino";
+import {
+  ADAPTOR_PROGRAM_ID,
+  DISCRIMINATOR,
+  FARM_GLOBAL_CONFIG,
+  SCOPE,
+} from "../constants/kamino";
 import { setupJupiterSwap } from "../utils/jupiter";
 
 const claimVaultRewardsWithIndex = async (
@@ -50,7 +56,7 @@ const claimVaultRewardsWithIndex = async (
   managerKp: Keypair,
   vault: PublicKey,
   vaultAssetMint: PublicKey,
-  assetTokenProgram: PublicKey,
+  assetTokenProgramPk: PublicKey,
   adaptorProgram: PublicKey,
   farmGlobalConfig: PublicKey,
   kvault: PublicKey,
@@ -62,47 +68,45 @@ const claimVaultRewardsWithIndex = async (
   rewardIndex: number,
   lookupTableAddresses: string[] = []
 ) => {
-  const vc = new VoltrClient(connection);
+  const managerSigner = await createKitSignerFromKeypair(managerKp);
   const addressEncoder = getAddressEncoder();
-
-  const { vaultStrategyAuth } = vc.findVaultStrategyAddresses(vault, kvault);
-
-  const api = createSolanaRpcApi<SolanaRpcApi>({
-    ...DEFAULT_RPC_CONFIG,
-    defaultCommitment: "processed",
+  const [vaultStrategyAuth] = await findVaultStrategyAuthPda({
+    vault: publicKeyToAddress(vault),
+    strategy: publicKeyToAddress(kvault),
   });
+
   const rpc = createRpc({
-    api,
+    api: createSolanaRpcApi<SolanaRpcApi>({
+      ...DEFAULT_RPC_CONFIG,
+      defaultCommitment: "processed",
+    }),
     transport: createDefaultRpcTransport({ url: process.env.HELIUS_RPC_URL! }),
   });
   const kaminoVault = new KaminoVault(address(kvault.toBase58()));
-  const vaultState = await kaminoVault.getState(rpc);
-
+  const vaultState = await kaminoVault.getState(rpc as any);
   const { vaultReservesAccountMetas, vaultReservesLendingMarkets } =
-    await getVaultReserves(rpc, vaultState);
-  const farms = new Farms(rpc);
+    await getVaultReserves(rpc as any, vaultState);
+  const farms = new Farms(rpc as never);
 
   const timestamp = new Date().getUTCMilliseconds() / 1000;
   const farmsForUser = await farms.getAllFarmsForUser(
-    address(vaultStrategyAuth.toBase58()),
+    address(vaultStrategyAuth),
     new Decimal(timestamp)
   );
 
+  const vaultStrategyAuthPk = new PublicKey(vaultStrategyAuth);
   const [sharesMint] = PublicKey.findProgramAddressSync(
     [Buffer.from("shares"), kvault.toBuffer()],
     kvaultsProgram
   );
-
   const userSharesAta = getAssociatedTokenAddressSync(
     sharesMint,
-    vaultStrategyAuth,
+    vaultStrategyAuthPk,
     true,
     sharesTokenProgram
   );
 
-  const farmsForUserArray = Array.from(farmsForUser.entries());
-
-  for (const [_, farmData] of farmsForUserArray) {
+  for (const [, farmData] of Array.from(farmsForUser.entries())) {
     if (rewardIndex >= farmData.pendingRewards.length) {
       console.log("Reward index", rewardIndex, "out of range for farm", farmData.farm);
       continue;
@@ -111,18 +115,22 @@ const claimVaultRewardsWithIndex = async (
     const userState = farmData.userStateAddress;
     const farmState = farmData.farm;
     const rewardMint = farmData.pendingRewards[rewardIndex].rewardTokenMint;
-    const userRewardAta = getAssociatedTokenAddressSync(
-      new PublicKey(rewardMint),
-      vaultStrategyAuth,
-      true,
-      new PublicKey(farmData.pendingRewards[rewardIndex].rewardTokenProgramId)
-    );
-    const rewardAmount = farmData.pendingRewards[rewardIndex].cumulatedPendingRewards;
+    const rewardTokenProgramId =
+      farmData.pendingRewards[rewardIndex].rewardTokenProgramId;
+    const rewardAmount =
+      farmData.pendingRewards[rewardIndex].cumulatedPendingRewards;
 
     if (rewardAmount.lte(0)) {
       console.log("No rewards to claim for farm", farmState, "at index", rewardIndex);
       continue;
     }
+
+    const userRewardAta = getAssociatedTokenAddressSync(
+      new PublicKey(rewardMint),
+      vaultStrategyAuthPk,
+      true,
+      new PublicKey(rewardTokenProgramId)
+    );
 
     const [rewardsVault] = await getProgramDerivedAddress({
       seeds: [
@@ -132,12 +140,10 @@ const claimVaultRewardsWithIndex = async (
       ],
       programAddress: farms.getProgramID(),
     });
-
     const [farmVaultsAuthority] = await getProgramDerivedAddress({
       seeds: [Buffer.from("authority"), addressEncoder.encode(farmState)],
       programAddress: farms.getProgramID(),
     });
-
     const [rewardsTreasuryVault] = await getProgramDerivedAddress({
       seeds: [
         Buffer.from("tvault"),
@@ -147,14 +153,15 @@ const claimVaultRewardsWithIndex = async (
       programAddress: farms.getProgramID(),
     });
 
-    const createUserRewardAtaIdemptotent =
+    const createUserRewardAtaIdempotent =
       createAssociatedTokenAccountIdempotentInstruction(
         managerKp.publicKey,
         userRewardAta,
-        vaultStrategyAuth,
+        vaultStrategyAuthPk,
         new PublicKey(rewardMint),
-        new PublicKey(farmData.pendingRewards[rewardIndex].rewardTokenProgramId)
+        new PublicKey(rewardTokenProgramId)
       );
+
     const claimRewardsRemainingAccounts: AccountMeta[] = [
       { pubkey: kvault, isSigner: false, isWritable: true },
       { pubkey: userSharesAta, isSigner: false, isWritable: true },
@@ -163,11 +170,7 @@ const claimVaultRewardsWithIndex = async (
       { pubkey: farmGlobalConfig, isSigner: false, isWritable: false },
       { pubkey: new PublicKey(rewardMint), isSigner: false, isWritable: false },
       { pubkey: userRewardAta, isSigner: false, isWritable: true },
-      {
-        pubkey: new PublicKey(rewardsVault),
-        isSigner: false,
-        isWritable: true,
-      },
+      { pubkey: new PublicKey(rewardsVault), isSigner: false, isWritable: true },
       {
         pubkey: new PublicKey(rewardsTreasuryVault),
         isSigner: false,
@@ -178,13 +181,9 @@ const claimVaultRewardsWithIndex = async (
         isSigner: false,
         isWritable: false,
       },
+      { pubkey: scope, isSigner: false, isWritable: false },
       {
-        pubkey: scope,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: new PublicKey(farmData.pendingRewards[rewardIndex].rewardTokenProgramId),
+        pubkey: new PublicKey(rewardTokenProgramId),
         isSigner: false,
         isWritable: false,
       },
@@ -193,11 +192,7 @@ const claimVaultRewardsWithIndex = async (
         isSigner: false,
         isWritable: false,
       },
-      {
-        pubkey: klendProgram,
-        isSigner: false,
-        isWritable: false,
-      },
+      { pubkey: klendProgram, isSigner: false, isWritable: false },
     ];
 
     const {
@@ -207,36 +202,35 @@ const claimVaultRewardsWithIndex = async (
     } = await setupJupiterSwap(
       connection,
       new BN(rewardAmount.toString()),
-      vaultStrategyAuth,
+      vaultStrategyAuthPk,
       new PublicKey(rewardMint),
       new PublicKey(assetMintAddress)
     );
 
-    // Prepend reward_index (u64 LE) before jupiter data
     const rewardIndexBuf = Buffer.alloc(8);
     rewardIndexBuf.writeBigUInt64LE(BigInt(rewardIndex));
     const additionalArgs = Buffer.concat([rewardIndexBuf, jupiterSwapData]);
 
-    const createWithdrawStrategyIx = await vc.createWithdrawStrategyIx(
-      {
-        instructionDiscriminator: Buffer.from(instructionDiscriminator),
-        withdrawAmount: new BN(0),
-        additionalArgs,
-      },
-      {
-        manager: managerKp.publicKey,
-        vault,
-        vaultAssetMint,
-        assetTokenProgram,
-        strategy: kvault,
-        remainingAccounts: [
-          ...claimRewardsRemainingAccounts,
-          ...vaultReservesAccountMetas,
-          ...vaultReservesLendingMarkets,
-          ...jupiterSwapAccountMetas,
-        ],
-        adaptorProgram,
-      }
+    const withdrawStrategyIx = kitInstructionToWeb3(
+      await getWithdrawStrategyInstructionAsync({
+        manager: managerSigner,
+        vault: publicKeyToAddress(vault),
+        strategy: publicKeyToAddress(kvault),
+        vaultAssetMint: publicKeyToAddress(vaultAssetMint),
+        assetTokenProgram: publicKeyToAddress(assetTokenProgramPk),
+        adaptorProgram: publicKeyToAddress(adaptorProgram),
+        amount: 0n,
+        instructionDiscriminator: new Uint8Array(instructionDiscriminator),
+        additionalArgs: new Uint8Array(additionalArgs),
+      })
+    );
+    withdrawStrategyIx.keys.push(
+      ...[
+        ...claimRewardsRemainingAccounts,
+        ...vaultReservesAccountMetas,
+        ...vaultReservesLendingMarkets,
+        ...jupiterSwapAccountMetas,
+      ]
     );
 
     const lookupTableAccounts = await getAddressLookupTableAccounts(
@@ -245,7 +239,7 @@ const claimVaultRewardsWithIndex = async (
     );
 
     const txSig = await sendAndConfirmOptimisedTx(
-      [createUserRewardAtaIdemptotent, createWithdrawStrategyIx],
+      [createUserRewardAtaIdempotent, withdrawStrategyIx],
       process.env.HELIUS_RPC_URL!,
       managerKp,
       [],
@@ -256,9 +250,9 @@ const claimVaultRewardsWithIndex = async (
 };
 
 const main = async () => {
-  const payerKpFile = fs.readFileSync(process.env.MANAGER_FILE_PATH!, "utf-8");
-  const payerKpData = JSON.parse(payerKpFile);
-  const payerSecret = Uint8Array.from(payerKpData);
+  const payerSecret = Uint8Array.from(
+    JSON.parse(fs.readFileSync(process.env.MANAGER_FILE_PATH!, "utf-8"))
+  );
   const payerKp = Keypair.fromSecretKey(payerSecret);
 
   await claimVaultRewardsWithIndex(

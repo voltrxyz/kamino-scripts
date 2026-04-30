@@ -1,12 +1,13 @@
 import "dotenv/config";
 import * as fs from "fs";
 import {
-  Connection,
-  Keypair,
-  PublicKey,
-  TransactionInstruction,
-} from "@solana/web3.js";
-import { VoltrClient } from "@voltr/vault-sdk";
+  address,
+  createKeyPairSignerFromBytes,
+  createSolanaRpc,
+  type Address,
+  type Instruction,
+} from "@solana/kit";
+import { getInitializeDirectWithdrawStrategyInstructionAsync } from "@voltr/vault-sdk";
 import {
   sendAndConfirmOptimisedTx,
   setupAddressLookupTable,
@@ -22,50 +23,29 @@ import {
 } from "../../config/kamino";
 import { ADAPTOR_PROGRAM_ID } from "../constants/kamino";
 
-const initializeDirectWithdrawStrategy = async (
-  connection: Connection,
-  payerKp: Keypair,
-  adminKp: Keypair,
-  vault: PublicKey,
-  strategy: PublicKey,
-  adaptorProgram: PublicKey,
-  useLookupTable: boolean,
-  lookupTableAddress: PublicKey,
-  instructionDiscriminator: Buffer,
-  additionalArgs: Buffer | null = null,
-  allowUserArgs: boolean = false
-) => {
-  if (instructionDiscriminator.length !== 8) {
-    throw new Error("Instruction discriminator must be 8 bytes");
-  }
-  const vc = new VoltrClient(connection);
+const main = async () => {
+  const payerSecret = Uint8Array.from(
+    JSON.parse(fs.readFileSync(process.env.ADMIN_FILE_PATH!, "utf-8"))
+  );
+  const payerSigner = await createKeyPairSignerFromBytes(payerSecret);
+  const adminSigner = await createKeyPairSignerFromBytes(payerSecret);
 
-  let transactionIxs: TransactionInstruction[] = [];
-
-  const createInitializeDirectWithdrawIx =
-    await vc.createInitializeDirectWithdrawStrategyIx(
-      {
-        instructionDiscriminator,
-        additionalArgs,
-        allowUserArgs,
-      },
-      {
-        payer: payerKp.publicKey,
-        admin: adminKp.publicKey,
-        vault,
-        strategy,
-        adaptorProgram,
-      }
-    );
-
-  transactionIxs.push(createInitializeDirectWithdrawIx);
+  const initializeDirectWithdrawIx =
+    await getInitializeDirectWithdrawStrategyInstructionAsync({
+      payer: payerSigner,
+      admin: adminSigner,
+      vault: vaultAddress,
+      strategy: address(kvaultAddress),
+      adaptorProgram: address(ADAPTOR_PROGRAM_ID),
+      instructionDiscriminator: new Uint8Array(directWithdrawDiscriminator),
+      additionalArgs: null,
+      allowUserArgs: false,
+    });
 
   const txSig = await sendAndConfirmOptimisedTx(
-    transactionIxs,
+    [initializeDirectWithdrawIx],
     process.env.HELIUS_RPC_URL!,
-    payerKp,
-    [adminKp],
-    undefined
+    payerSigner
   );
   console.log(
     "Kvault direct withdraw strategy initialized with signature:",
@@ -73,59 +53,32 @@ const initializeDirectWithdrawStrategy = async (
   );
 
   if (useLookupTable) {
-    const transactionIxs1: TransactionInstruction[] = [];
+    const transactionIxs1: Instruction[] = [];
+    const ixAddresses: Address[] = Array.from(
+      new Set(
+        (initializeDirectWithdrawIx.accounts ?? []).map((a) => a.address as Address)
+      )
+    );
 
-    const lut = await setupAddressLookupTable(
-      connection,
-      payerKp.publicKey,
-      adminKp.publicKey,
-      [
-        ...new Set(
-          transactionIxs.flatMap((ix) =>
-            ix.keys.map((k) => k.pubkey.toBase58())
-          )
-        ),
-      ],
+    await setupAddressLookupTable(
+      createSolanaRpc(process.env.HELIUS_RPC_URL!),
+      payerSigner,
+      adminSigner,
+      ixAddresses,
       transactionIxs1,
-      new PublicKey(lookupTableAddress)
+      lookupTableAddress
     );
 
     const txSig1 = await sendAndConfirmOptimisedTx(
       transactionIxs1,
       process.env.HELIUS_RPC_URL!,
-      payerKp,
-      [adminKp],
+      payerSigner,
       undefined,
       50_000
     );
 
     console.log(`LUT updated with signature: ${txSig1}`);
   }
-};
-
-const main = async () => {
-  const payerKpFile = fs.readFileSync(process.env.ADMIN_FILE_PATH!, "utf-8");
-  const payerKpData = JSON.parse(payerKpFile);
-  const payerSecret = Uint8Array.from(payerKpData);
-  const payerKp = Keypair.fromSecretKey(payerSecret);
-  const adminKpFile = fs.readFileSync(process.env.ADMIN_FILE_PATH!, "utf-8");
-  const adminKpData = JSON.parse(adminKpFile);
-  const adminSecret = Uint8Array.from(adminKpData);
-  const adminKp = Keypair.fromSecretKey(adminSecret);
-
-  await initializeDirectWithdrawStrategy(
-    new Connection(process.env.HELIUS_RPC_URL!),
-    payerKp,
-    adminKp,
-    new PublicKey(vaultAddress),
-    new PublicKey(kvaultAddress),
-    new PublicKey(ADAPTOR_PROGRAM_ID),
-    useLookupTable,
-    new PublicKey(lookupTableAddress),
-    Buffer.from(directWithdrawDiscriminator),
-    null,
-    false
-  );
 };
 
 main();

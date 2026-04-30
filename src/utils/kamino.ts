@@ -6,12 +6,12 @@ import {
   Reserve,
   VaultState,
 } from "@kamino-finance/klend-sdk";
-import { address, Address, Rpc, SolanaRpcApi } from "@solana/kit";
+import { address, Address } from "@solana/kit";
 import { AccountMeta, PublicKey } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 
 export const getVaultReserves = async (
-  rpc: Rpc<SolanaRpcApi>,
+  rpc: any,
   vaultState: VaultState
 ) => {
   const vaultAllocations = vaultState.vaultAllocationStrategy.filter(
@@ -29,7 +29,7 @@ export const getVaultReserves = async (
     })
     .send();
 
-  const deserializedReserves = reserveAccounts.value.map((reserve, i) => {
+  const deserializedReserves = reserveAccounts.value.map((reserve: any, i: number) => {
     if (reserve === null) {
       // maybe reuse old here
       throw new Error(`Reserve account ${vaultReserves[i]} was not found`);
@@ -44,7 +44,7 @@ export const getVaultReserves = async (
   });
 
   const reservesAndOracles = await getTokenOracleData(
-    rpc,
+    rpc as never,
     deserializedReserves
   );
 
@@ -63,7 +63,7 @@ export const getVaultReserves = async (
       vaultReserves[index],
       reserve,
       oracle,
-      rpc,
+      rpc as never,
       slotDuration
     );
     kaminoReserves.set(kaminoReserve.address, kaminoReserve);

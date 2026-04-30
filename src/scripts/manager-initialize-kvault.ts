@@ -1,163 +1,135 @@
 import "dotenv/config";
 import * as fs from "fs";
+import { KVAULTS_PROGRAM_ID } from "@kamino-finance/klend-sdk";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
-  Connection,
-  Keypair,
-  PublicKey,
-  TransactionInstruction,
-} from "@solana/web3.js";
+  address,
+  createKeyPairSignerFromBytes,
+  createSolanaRpc,
+  type Address,
+  type Instruction,
+} from "@solana/kit";
+import { PublicKey } from "@solana/web3.js";
 import {
-  getAddressLookupTableAccounts,
+  findVaultStrategyAuthPda,
+  getInitializeStrategyInstructionAsync,
+} from "@voltr/vault-sdk";
+import {
+  getAddressesByLookupTable,
+  publicKeyToAddress,
   sendAndConfirmOptimisedTx,
   setupAddressLookupTable,
   setupTokenAccount,
 } from "../utils/helper";
-import { VoltrClient } from "@voltr/vault-sdk";
 import {
   assetMintAddress,
-  vaultAddress,
   assetTokenProgram,
-  useLookupTable,
   lookupTableAddress,
+  useLookupTable,
+  vaultAddress,
 } from "../../config/base";
-import { ADAPTOR_PROGRAM_ID, DISCRIMINATOR } from "../constants/kamino";
 import { kvaultAddress } from "../../config/kamino";
-import { KVAULTS_PROGRAM_ID } from "@kamino-finance/klend-sdk";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ADAPTOR_PROGRAM_ID, DISCRIMINATOR } from "../constants/kamino";
 
-const initializeKVaultStrategy = async (
-  connection: Connection,
-  payerKp: Keypair,
-  adminKp: Keypair,
-  managerKp: Keypair,
-  vault: PublicKey,
-  vaultAssetMint: PublicKey,
-  assetTokenProgram: PublicKey,
-  adaptorProgram: PublicKey,
-  kvault: PublicKey,
-  kvaultsProgram: PublicKey,
-  sharesTokenProgram: PublicKey,
-  instructionDiscriminator: number[],
-  lookupTableAddresses: string[] = []
-) => {
-  const vc = new VoltrClient(connection);
+const main = async () => {
+  const payerSecret = Uint8Array.from(
+    JSON.parse(fs.readFileSync(process.env.ADMIN_FILE_PATH!, "utf-8"))
+  );
+  const payerSigner = await createKeyPairSignerFromBytes(payerSecret);
+  const rpc = createSolanaRpc(process.env.HELIUS_RPC_URL!);
 
-  const { vaultStrategyAuth } = vc.findVaultStrategyAddresses(vault, kvault);
+  const kvaultPk = new PublicKey(kvaultAddress);
+  const kvaultsProgramPk = new PublicKey(KVAULTS_PROGRAM_ID);
+  const strategy = publicKeyToAddress(kvaultPk);
+  const [vaultStrategyAuth] = await findVaultStrategyAuthPda({
+    vault: vaultAddress,
+    strategy,
+  });
 
-  let transactionIxs: TransactionInstruction[] = [];
+  const transactionIxs: Instruction[] = [];
 
-  const _vaultStrategyAssetAta = await setupTokenAccount(
-    connection,
-    managerKp.publicKey,
-    vaultAssetMint,
+  await setupTokenAccount(
+    rpc,
+    payerSigner,
+    assetMintAddress,
     vaultStrategyAuth,
     transactionIxs,
     assetTokenProgram
   );
 
-  const _managerAssetAta = await setupTokenAccount(
-    connection,
-    managerKp.publicKey,
-    vaultAssetMint,
-    managerKp.publicKey,
+  await setupTokenAccount(
+    rpc,
+    payerSigner,
+    assetMintAddress,
+    payerSigner.address,
     transactionIxs,
     assetTokenProgram
   );
 
   const [sharesMint] = PublicKey.findProgramAddressSync(
-    [Buffer.from("shares"), kvault.toBuffer()],
-    kvaultsProgram
+    [Buffer.from("shares"), kvaultPk.toBuffer()],
+    kvaultsProgramPk
   );
 
-  const _vaultStrategySharesAta = await setupTokenAccount(
-    connection,
-    managerKp.publicKey,
-    sharesMint,
+  await setupTokenAccount(
+    rpc,
+    payerSigner,
+    publicKeyToAddress(sharesMint),
     vaultStrategyAuth,
     transactionIxs,
-    sharesTokenProgram
+    publicKeyToAddress(TOKEN_PROGRAM_ID)
   );
 
-  const createInitializeStrategyIx = await vc.createInitializeStrategyIx(
-    {
-      instructionDiscriminator: Buffer.from(instructionDiscriminator),
-    },
-    {
-      payer: payerKp.publicKey,
-      manager: managerKp.publicKey,
-      vault,
-      strategy: kvault,
-      remainingAccounts: [],
-      adaptorProgram,
-    }
-  );
+  const initializeStrategyIx = await getInitializeStrategyInstructionAsync({
+    payer: payerSigner,
+    manager: payerSigner,
+    vault: vaultAddress,
+    strategy,
+    adaptorProgram: address(ADAPTOR_PROGRAM_ID),
+    instructionDiscriminator: new Uint8Array(DISCRIMINATOR.INITIALIZE_VAULT),
+    additionalArgs: null,
+  });
 
-  transactionIxs.push(createInitializeStrategyIx);
+  transactionIxs.push(initializeStrategyIx);
 
-  const lookupTableAccounts = lookupTableAddresses
-    ? await getAddressLookupTableAccounts(lookupTableAddresses, connection)
-    : [];
+  const lookupTables =
+    useLookupTable && lookupTableAddress
+      ? await getAddressesByLookupTable([lookupTableAddress], rpc)
+      : {};
 
   const txSig = await sendAndConfirmOptimisedTx(
     transactionIxs,
     process.env.HELIUS_RPC_URL!,
-    managerKp,
-    [],
-    lookupTableAccounts
+    payerSigner,
+    lookupTables
   );
   console.log("Kvault strategy initialized with signature:", txSig);
 
-  if (useLookupTable) {
-    const transactionIxs1: TransactionInstruction[] = [];
+  if (useLookupTable && lookupTableAddress) {
+    const lutIxs: Instruction[] = [];
+    const ixAddresses: Address[] = Array.from(
+      new Set((initializeStrategyIx.accounts ?? []).map((a) => a.address as Address))
+    );
 
-    const lut = await setupAddressLookupTable(
-      connection,
-      payerKp.publicKey,
-      adminKp.publicKey,
-      [
-        ...new Set(
-          transactionIxs.flatMap((ix) =>
-            ix.keys.map((k) => k.pubkey.toBase58())
-          )
-        ),
-      ],
-      transactionIxs1,
-      new PublicKey(lookupTableAddress)
+    await setupAddressLookupTable(
+      rpc,
+      payerSigner,
+      payerSigner,
+      ixAddresses,
+      lutIxs,
+      lookupTableAddress
     );
 
     const txSig1 = await sendAndConfirmOptimisedTx(
-      transactionIxs1,
+      lutIxs,
       process.env.HELIUS_RPC_URL!,
-      payerKp,
-      [adminKp],
+      payerSigner,
       undefined,
       50_000
     );
 
     console.log(`LUT updated with signature: ${txSig1}`);
   }
-};
-
-const main = async () => {
-  const payerKpFile = fs.readFileSync(process.env.ADMIN_FILE_PATH!, "utf-8");
-  const payerKpData = JSON.parse(payerKpFile);
-  const payerSecret = Uint8Array.from(payerKpData);
-  const payerKp = Keypair.fromSecretKey(payerSecret);
-
-  await initializeKVaultStrategy(
-    new Connection(process.env.HELIUS_RPC_URL!),
-    payerKp,
-    payerKp,
-    payerKp,
-    new PublicKey(vaultAddress),
-    new PublicKey(assetMintAddress),
-    new PublicKey(assetTokenProgram),
-    new PublicKey(ADAPTOR_PROGRAM_ID),
-    new PublicKey(kvaultAddress),
-    new PublicKey(KVAULTS_PROGRAM_ID),
-    TOKEN_PROGRAM_ID,
-    DISCRIMINATOR.INITIALIZE_VAULT
-  );
 };
 
 main();
